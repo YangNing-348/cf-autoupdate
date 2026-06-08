@@ -15,20 +15,17 @@ jobs:
 
       - name: Download CloudflareSpeedTest
         run: |
-          # 1. 采用最新版本的文件名规则下载 cfst_linux_amd64.tar.gz
+          # 下载官方 Linux 64位 版本的 Cloudflare 测速工具
           wget -q https://github.com/XIU2/CloudflareSpeedTest/releases/latest/download/cfst_linux_amd64.tar.gz
-          
-          # 2. 解压最新版的 cfst 可执行文件
           tar -zxf cfst_linux_amd64.tar.gz cfst
           chmod +x cfst
 
       - name: Run CloudflareSpeedTest
         run: |
-          # 运行最新版 cfst 测速并筛选出 3 个下载速度最快的 IP
-          # -dn 3 代表需要满足 3 个下载测速数量
+          # 运行测速，筛选出 3 个下载速度最快的 IP
           ./cfst -dn 3 -f ip.txt -o result.csv
           
-          # 提取最新 csv 结果中的第 2, 3, 4 行的第 1 列 (IP 地址)
+          # 提取测速结果中的 3 个 IP
           IP_1=$(sed -n '2p' result.csv | cut -d',' -f1)
           IP_2=$(sed -n '3p' result.csv | cut -d',' -f1)
           IP_3=$(sed -n '4p' result.csv | cut -d',' -f1)
@@ -37,7 +34,7 @@ jobs:
           echo "Selected IP 2: $IP_2"
           echo "Selected IP 3: $IP_3"
           
-          # 写入环境变量以便下一步读取
+          # 将 IP 写入环境变量
           echo "CF_IP_1=$IP_1" >> $GITHUB_ENV
           echo "CF_IP_2=$IP_2" >> $GITHUB_ENV
           echo "CF_IP_3=$IP_3" >> $GITHUB_ENV
@@ -56,18 +53,27 @@ jobs:
 
           echo "YAML file updated successfully with new IPs."
 
-      - name: Update GitHub Gist
-        uses: CustomSenior/gist-actions@v1.3.0
-        with:
-          auth: ${{ secrets.GIST_TOKEN }}
-          gist_id: ${{ secrets.GIST_ID }}
-          gist_title: 'wmsxwd.yaml'
-          gist_path: 'wmsxwd.yaml'
-          file_type: 'text'
-
-      # （可选）建议将更新后的 yaml 也回传保存到 GitHub 仓库，以便跟踪历史记录
-      - name: Commit & Push to Repository
+      - name: Update GitHub Gist via API
+        env:
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+          GIST_ID: ${{ secrets.GIST_ID }}
         run: |
+          # 使用 python 将本地修改后的 wmsxwd.yaml 内容进行 JSON 转义，防止由于特殊字符导致 API 请求失败
+          CONTENT=$(python3 -c 'import json; print(json.dumps(open("wmsxwd.yaml").read()))')
+          
+          # 构造调用 GitHub 官方 API 的 JSON 数据体
+          JSON_DATA="{\"files\": {\"wmsxwd.yaml\": {\"content\": $CONTENT}}}"
+          
+          # 使用 curl 直接更新 Gist
+          curl -L \
+            -X PATCH \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GIST_TOKEN" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/gists/$GIST_ID \
+            -d "$JSON_DATA"
+          
+          echo "Gist updated successfully via Official GitHub API."
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add wmsxwd.yaml
