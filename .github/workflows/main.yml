@@ -18,42 +18,46 @@ jobs:
           GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
           GIST_ID: ${{ secrets.GIST_ID }}
         run: |
-          # 1. 抓取针对国内三大运营商当前最顶级的 3 个优选 IP
+          # 1. 抓取最新优选 IP
           IPS=$(curl -s https://raw.githubusercontent.com/vfarid/cf-clean-ips/main/list.txt | head -n 3)
-          
           IP1=$(echo "$IPS" | sed -n '1p')
           IP2=$(echo "$IPS" | sed -n '2p')
           IP3=$(echo "$IPS" | sed -n '3p')
           
-          echo "今日最优IP: $IP1, $IP2, $IP3"
+          echo "最新获取的优选IP: $IP1, $IP2, $IP3"
 
-          # 2. 从 GitHub Gist 安全下载你当前的完整 wmsxwd.yaml
+          # 2. 从 Gist 下载当前配置
           curl -s -H "Authorization: token $GIST_TOKEN" "https://api.github.com/gists/$GIST_ID" > gist.json
           
-          # 3. 动态提取文件名和内容
-          FILENAME=$(python3 -c "import json; data=json.load(open('gist.json')); print(list(data['files'].keys())[0])")
-          echo "检测到的Gist文件名为: $FILENAME"
-
-          # 4. 精准匹配并替换你 proxies 列表里的优选IP值
+          # 3. 使用 Python 精准、安全地替换
           python3 -c "
-          import json, re
-          data = json.load(open('gist.json'))
-          filename = '$FILENAME'
-          content = data['files'][filename]['content']
+          import json, re, sys
           
-          # 利用正则精准捕捉 { name: '优选IP_x', ..., server: xxx } 并无感替换 IP
-          content = re.sub(r'(name:\s*\"?优选IP_1\"?.*?server:\s*)([^\s,\}]+)', r'\g<1>'$IP1'', content)
-          content = re.sub(r'(name:\s*\"?优选IP_2\"?.*?server:\s*)([^\s,\}]+)', r'\g<1>'$IP2'', content)
-          content = re.sub(r'(name:\s*\"?优选IP_3\"?.*?server:\s*)([^\s,\}]+)', r'\g<1>'$IP3'', content)
-          
-          update_data = {'files': {filename: {'content': content}}}
-          json.dump(update_data, open('payload.json', 'w'))
+          try:
+              data = json.load(open('gist.json'))
+              # 动态获取第一个文件的文件名（管它是 txt 还是 yaml）
+              filename = list(data['files'].keys())[0]
+              print(f'成功匹配到 Gist 中的文件名: {filename}')
+              
+              content = data['files'][filename]['content']
+              
+              # 正则无感替换 server 后的 IP 地址
+              content = re.sub(r'(name:\s*\"?优选IP_1\"?.*?server:\s*)([^\s,\}]+)', r'\g<1>\"'+'$IP1'+'\"', content)
+              content = re.sub(r'(name:\s*\"?优选IP_2\"?.*?server:\s*)([^\s,\}]+)', r'\g<1>\"'+'$IP2'+'\"', content)
+              content = re.sub(r'(name:\s*\"?优选IP_3\"?.*?server:\s*)([^\s,\}]+)', r'\g<1>\"'+'$IP3'+'\"', content)
+              
+              update_data = {'files': {filename: {'content': content}}}
+              json.dump(update_data, open('payload.json', 'w'))
+              print('YAML 内存修改成功，Payload 已生成。')
+          except Exception as e:
+              print(f'❌ 脚本执行出错: {str(e)}', file=sys.stderr)
+              sys.exit(1)
           "
 
-          # 5. 将更新后的完整 YAML 推回你的 GitHub Gist
+          # 4. 推回 Gist
           curl -s -X PATCH -H "Authorization: token $GIST_TOKEN" \
                -H "Content-Type: application/json" \
                -d @payload.json \
-               "https://api.github.com/gists/$GIST_ID"
+               "https://api.github.com/gists/$GIST_ID" > /dev/null
                
-          echo "Gist YAML 优选 IP 自动更新成功！"
+          echo "🚀 恭喜！Gist 优选 IP 自动更新成功！"
