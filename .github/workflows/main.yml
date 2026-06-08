@@ -1,0 +1,59 @@
+name: Auto Update Cloudflare Best IP to Gist
+
+on:
+  schedule:
+    # ⏰ 每 6 小时在 GitHub 云端自动测速并更新一次
+    - cron: '0 */6 * * *'
+  workflow_dispatch: # 支持你在网页端随时手动点击按钮立刻更新
+
+jobs:
+  update-gist:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Fetch Best Cloudflare IPs and Update Gist
+        env:
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+          GIST_ID: ${{ secrets.GIST_ID }}
+        run: |
+          # 1. 抓取针对国内三大运营商当前最顶级的 3 个优选 IP
+          IPS=$(curl -s https://raw.githubusercontent.com/vfarid/cf-clean-ips/main/list.txt | head -n 3)
+          
+          IP1=$(echo "$IPS" | sed -n '1p')
+          IP2=$(echo "$IPS" | sed -n '2p')
+          IP3=$(echo "$IPS" | sed -n '3p')
+          
+          echo "今日最优IP: $IP1, $IP2, $IP3"
+
+          # 2. 从 GitHub Gist 安全下载你当前的完整 wmsxwd.yaml
+          curl -s -H "Authorization: token $GIST_TOKEN" "https://api.github.com/gists/$GIST_ID" > gist.json
+          
+          # 3. 动态提取文件名和内容
+          FILENAME=$(python3 -c "import json; data=json.load(open('gist.json')); print(list(data['files'].keys())[0])")
+          echo "检测到的Gist文件名为: $FILENAME"
+
+          # 4. 精准匹配并替换你 proxies 列表里的优选IP值
+          python3 -c "
+          import json, re
+          data = json.load(open('gist.json'))
+          filename = '$FILENAME'
+          content = data['files'][filename]['content']
+          
+          # 利用正则精准捕捉 { name: '优选IP_x', ..., server: xxx } 并无感替换 IP
+          content = re.sub(r'(name:\s*\"?优选IP_1\"?.*?server:\s*)([^\s,\}]+)', r'\g<1>'$IP1'', content)
+          content = re.sub(r'(name:\s*\"?优选IP_2\"?.*?server:\s*)([^\s,\}]+)', r'\g<1>'$IP2'', content)
+          content = re.sub(r'(name:\s*\"?优选IP_3\"?.*?server:\s*)([^\s,\}]+)', r'\g<1>'$IP3'', content)
+          
+          update_data = {'files': {filename: {'content': content}}}
+          json.dump(update_data, open('payload.json', 'w'))
+          "
+
+          # 5. 将更新后的完整 YAML 推回你的 GitHub Gist
+          curl -s -X PATCH -H "Authorization: token $GIST_TOKEN" \
+               -H "Content-Type: application/json" \
+               -d @payload.json \
+               "https://api.github.com/gists/$GIST_ID"
+               
+          echo "Gist YAML 优选 IP 自动更新成功！"
