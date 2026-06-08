@@ -22,8 +22,9 @@ jobs:
 
       - name: Run CloudflareSpeedTest
         run: |
-          # 运行测速，筛选出 3 个下载速度最快的 IP
-          ./cfst -dn 3 -f ip.txt -o result.csv
+          # 💡 关键修复：加入 -allip 参数，让程序直接使用内置的全部 IP 库，不再去寻找 ip.txt
+          # -dn 3 代表需要筛选出 3 个下载速度最快的 IP
+          ./cfst -allip -dn 3 -o result.csv
           
           # 提取测速结果中的 3 个 IP
           IP_1=$(sed -n '2p' result.csv | cut -d',' -f1)
@@ -56,7 +57,7 @@ jobs:
       - name: Update GitHub Gist via API
         env:
           GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
-          GIST_ID: ${{ secrets.GIST_ID }}
+          GIST_ID: ${{ secrets.GIST_ID }} # 💡 已经改用你配置在 Secrets 里的 GIST_ID，无需手动粘贴
         run: |
           # 使用 python 将本地修改后的 wmsxwd.yaml 内容进行 JSON 转义，防止由于特殊字符导致 API 请求失败
           CONTENT=$(python3 -c 'import json; print(json.dumps(open("wmsxwd.yaml").read()))')
@@ -74,6 +75,10 @@ jobs:
             -d "$JSON_DATA"
           
           echo "Gist updated successfully via Official GitHub API."
+
+      # 将更新后的 yaml 也回传保存到当前 GitHub 仓库
+      - name: Commit & Push to Repository
+        run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add wmsxwd.yaml
