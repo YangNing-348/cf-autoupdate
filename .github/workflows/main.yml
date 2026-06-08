@@ -12,18 +12,26 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Download CloudflareSpeedTest
+      - name: Download CloudflareSpeedTest and IP list
         run: |
+          # 1. 下载并解压最新的测速主程序 cfst
           wget -q https://github.com/XIU2/CloudflareSpeedTest/releases/latest/download/cfst_linux_amd64.tar.gz
           tar -zxf cfst_linux_amd64.tar.gz cfst
           chmod +x cfst
+          
+          # 2. 💡 核心修复：直接从官方下载程序运行必须依赖的默认 ip.txt 文件
+          wget -q https://raw.githubusercontent.com/XIU2/CloudflareSpeedTest/master/ip.txt
 
       - name: Run CloudflareSpeedTest
         run: |
-          ./cfst -allip -dn 3 -o result.csv
+          # 现在有 ip.txt 了，直接正常跑测速，筛选 3 个最快 IP
+          ./cfst -dn 3 -o result.csv
+          
+          # 提取测速结果
           IP_1=$(sed -n '2p' result.csv | cut -d',' -f1)
           IP_2=$(sed -n '3p' result.csv | cut -d',' -f1)
           IP_3=$(sed -n '4p' result.csv | cut -d',' -f1)
+          
           echo "CF_IP_1=$IP_1" >> $GITHUB_ENV
           echo "CF_IP_2=$IP_2" >> $GITHUB_ENV
           echo "CF_IP_3=$IP_3" >> $GITHUB_ENV
